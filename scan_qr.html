@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Scan QR | QR Attendance System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="global.css">
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="firebase-init.js?v=5"></script>
+    <style>
+        #reader {
+            width: 100%;
+            max-width: 500px;
+            border-radius: 24px;
+            overflow: hidden;
+            border: 4px solid var(--primary);
+            background: #000;
+            box-shadow: var(--shadow);
+        }
+        #result-card {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 20px;
+            display: none;
+            animation: slideUp 0.3s ease;
+            text-align: center;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: 800;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+    </style>
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FFD700">
+</head>
+<body>
+
+<div class="flex-center" style="padding: 20px;">
+    <header class="main-header">
+        <h1>Attendance <span class="title-gradient">Scanner</span></h1>
+        <p>Position the student's QR code within the frame</p>
+    </header>
+
+    <div id="reader"></div>
+
+    <div id="result-card" class="glass-card" style="width: 100%; max-width: 500px; background: white;">
+        <div id="student-details">
+            <h3 id="res-name" style="margin: 0; color: var(--dark);">---</h3>
+            <p id="res-info" style="margin: 5px 0; font-size: 14px; color: #666;">---</p>
+            <div id="res-status" class="status-badge">---</div>
+        </div>
+        <div style="margin-top: 20px;">
+            <button class="btn btn-secondary" style="width: auto; padding: 10px 20px;" onclick="window.location='attendance_report.html'">View Records</button>
+        </div>
+    </div>
+
+    <a href="admin_dashboard.html" class="btn" style="width: auto; margin-top: 30px; background: rgba(255,255,255,0.1); color: white;">⬅ Back to Dashboard</a>
+</div>
+
+<!-- Audio for scan sound -->
+<audio id="beepSound" src="https://raw.githubusercontent.com/Anis-Fekih/qr-scanner-js/master/audio/beep.mp3" preload="auto"></audio>
+
+<script>
+let lastScannedId = null;
+let isProcessing = false;
+
+function playBeep() {
+    const beep = document.getElementById("beepSound");
+    beep.currentTime = 0;
+    beep.play().catch(e => console.log("Audio error:", e));
+}
+
+async function onScanSuccess(scannedText) {
+    if (isProcessing || scannedText === lastScannedId) return;
+    
+    isProcessing = true;
+    lastScannedId = scannedText;
+    playBeep();
+
+    try {
+        const students = await FB.get('students');
+        let student = null;
+        for (let key in students) {
+            if (students[key].id === scannedText.trim()) {
+                student = students[key];
+                break;
+            }
+        }
+
+        if (student) {
+            const result = await recordAttendance(student);
+            showResult(student, result);
+        } else {
+            alert("❌ Student ID not recognized!");
+        }
+    } catch (err) {
+        console.error(err);
+    } finally {
+        setTimeout(() => { 
+            lastScannedId = null; 
+            isProcessing = false;
+        }, 3000);
+    }
+}
+
+async function recordAttendance(s) {
+    const today = getTodayDate();
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    const settings = await FB.get('settings');
+    const startTimeStr = (settings && settings.sessionStartTime) ? settings.sessionStartTime : "08:00";
+    const [sH, sM] = startTimeStr.split(':').map(Number);
+    const sessionTime = new Date();
+    sessionTime.setHours(sH, sM, 0, 0);
+    
+    const diffHrs = (now - sessionTime) / (1000 * 60 * 60);
+    const status = diffHrs > 3 ? "LATE" : "PRESENT";
+
+    const path = `attendance/${today}/${s.id}`;
+    const existing = await FB.get(path);
+
+    if (!existing) {
+        await FB.set(path, {
+            studentId: s.id,
+            name: s.name,
+            course: s.course,
+            year: s.year,
+            section: s.section,
+            date: today,
+            timeIn: timeStr,
+            timeOut: "--:--",
+            status: status
+        });
+        return { type: 'IN', status };
+    } else if (existing.timeOut === "--:--") {
+        await FB.update(path, { timeOut: timeStr });
+        return { type: 'OUT', status: existing.status };
+    }
+    return { type: 'LIMIT', status: existing.status };
+}
+
+function showResult(s, res) {
+    const card = document.getElementById("result-card");
+    const name = document.getElementById("res-name");
+    const info = document.getElementById("res-info");
+    const status = document.getElementById("res-status");
+
+    name.innerText = s.name;
+    info.innerText = `${s.course} - Year ${s.year} (Section ${s.section})`;
+    
+    card.style.display = "block";
+
+    if (res.type === 'IN') {
+        status.innerText = `SUCCESS: TIME-IN (${res.status})`;
+        status.style.background = res.status === 'LATE' ? 'var(--danger)' : 'var(--success)';
+        status.style.color = "white";
+    } else if (res.type === 'OUT') {
+        status.innerText = "SUCCESS: TIME-OUT";
+        status.style.background = "var(--primary)";
+        status.style.color = "white";
+    } else {
+        status.innerText = "ALREADY RECORDED";
+        status.style.background = "#666";
+        status.style.color = "white";
+    }
+
+    setTimeout(() => { card.style.display = "none"; }, 5000);
+}
+
+const scanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 });
+scanner.render(onScanSuccess);
+</script>
+<!-- Service Worker Registration -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        console.log('SW registered!', reg);
+      }).catch(err => console.log('SW registration failed', err));
+    });
+  }
+</script>
+</body>
+</html>
+

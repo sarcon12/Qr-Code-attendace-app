@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Register Student | QR Attendance System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="global.css">
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="firebase-init.js?v=5"></script>
+    <style>
+        #message {
+            margin-top: 15px;
+            font-size: 14px;
+            font-weight: 700;
+            min-height: 20px;
+            text-align: center;
+        }
+
+        .image-preview-wrapper {
+            display: flex;
+            justify-content: center;
+            margin: 1rem 0;
+        }
+
+        #imagePreview {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 4px solid var(--primary);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: none;
+        }
+
+        .file-input-label {
+            display: block;
+            text-align: center;
+            font-size: 13px;
+            color: #666;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+    </style>
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FFD700">
+</head>
+
+<body>
+
+    <div class="flex-center">
+        <main class="glass-card" style="width: 100%; max-width: 500px;">
+            <div style="display: flex; justify-content: center; align-items: center; gap: 20px; margin-bottom: 20px;">
+                <img src="4.jpg" alt="Logo 1" style="width: 90px; height: 90px; object-fit: contain; border-radius: 50%;">
+                <img src="5.jpg" alt="Logo 2" style="width: 90px; height: 90px; object-fit: contain; border-radius: 50%;">
+            </div>
+            <h2 style="text-align: center; margin-bottom: 1.5rem;">Student Registration</h2>
+
+            <div id="formFields">
+                <input id="username" type="text" placeholder="Username" autocomplete="username">
+                <input id="password" type="password" placeholder="Password" autocomplete="new-password">
+                <input id="name" type="text" placeholder="Full Name">
+
+                <select id="course" onchange="updateYear()">
+                    <option value="">Select Course</option>
+                    <option value="ACT">ACT</option>
+                    <option value="BSIS">BSIS</option>
+                    <option value="BEPED">BEPED</option>
+                </select>
+
+                <select id="year">
+                    <option value="">Select Year</option>
+                </select>
+
+                <input id="section" type="text" placeholder="Your Section">
+                <input id="phone" type="tel" placeholder="Phone Number">
+
+                <div class="image-preview-wrapper">
+                    <img id="imagePreview" src="" alt="Profile Preview">
+                </div>
+
+                <label class="file-input-label">Profile Picture <span style="color:var(--danger)">*</span></label>
+                <input type="file" id="studentImage" accept="image/*" onchange="previewImage(this)"
+                    style="font-size: 12px; padding: 10px; border: 1px dashed #ccc;" required>
+
+                <button id="regBtn" class="btn btn-primary" onclick="registerStudent()">Create Account</button>
+                <a href="index.html" class="btn" style="background: #6c757d; color: white; margin-top: 10px;">Back to
+                    Login</a>
+            </div>
+
+            <div id="message"></div>
+        </main>
+    </div>
+
+    <script>
+        let studentPhotoBase64 = "";
+
+        function previewImage(input) {
+            const file = input.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement("canvas");
+                        const MAX_WIDTH = 300;
+                        const scaleSize = MAX_WIDTH / img.width;
+                        canvas.width = MAX_WIDTH;
+                        canvas.height = img.height * scaleSize;
+
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
+
+                        const preview = document.getElementById('imagePreview');
+                        preview.src = compressedBase64;
+                        preview.style.display = 'block';
+                        studentPhotoBase64 = compressedBase64;
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function updateYear() {
+            const course = document.getElementById("course").value;
+            const year = document.getElementById("year");
+            year.innerHTML = '<option value="">Select Year</option>';
+
+            if (course === "ACT") {
+                year.innerHTML += '<option value="1">1st Year</option><option value="2">2nd Year</option>';
+            } else if (course === "BSIS") {
+                year.innerHTML += '<option value="3">3rd Year</option><option value="4">4th Year</option>';
+            } else if (course === "BEPED") {
+                year.innerHTML += '<option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option><option value="4">4th Year</option>';
+            }
+        }
+
+        function showMsg(m, isErr = true) {
+            const msg = document.getElementById("message");
+            msg.innerText = m;
+            msg.style.color = isErr ? "var(--danger)" : "var(--success)";
+        }
+
+        async function registerStudent() {
+            const btn = document.getElementById("regBtn");
+
+            const data = {
+                username: document.getElementById("username").value.trim(),
+                password: document.getElementById("password").value.trim(),
+                name: document.getElementById("name").value.trim(),
+                course: document.getElementById("course").value,
+                year: document.getElementById("year").value,
+                section: document.getElementById("section").value.trim(),
+                phone: document.getElementById("phone").value.trim()
+            };
+
+            if (Object.values(data).some(val => !val)) {
+                showMsg("⚠️ Please fill all required fields!");
+                return;
+            }
+
+            if (!studentPhotoBase64) {
+                showMsg("⚠️ Please upload a Profile Picture. It is required!");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+
+            try {
+                // Use FB.get to support both online and offline modes safely
+                const students = await FB.get('students');
+                let usernameExists = false;
+                if (students) {
+                    for (let key in students) {
+                        if (students[key].username === data.username) {
+                            usernameExists = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (usernameExists) {
+                    showMsg("❌ Username already taken!");
+                    btn.disabled = false;
+                    btn.innerText = "Create Account";
+                    return;
+                }
+
+                const id = "STU" + Date.now();
+                const studentData = {
+                    ...data,
+                    id: id,
+                    photo: studentPhotoBase64,
+                    registeredDate: getTodayDate()
+                };
+
+                await FB.push('students', studentData);
+
+                alert("✅ Registration Successful! Automatically logging you in...");
+
+                // Auto-login the new student
+                localStorage.setItem("currentUser", JSON.stringify({
+                    username: studentData.username,
+                    role: "student",
+                    id: studentData.id,
+                    name: studentData.name
+                }));
+
+                window.location = "student_dashboard.html";
+
+            } catch (err) {
+                console.error(err);
+                showMsg("❌ Error: " + err.message);
+                btn.disabled = false;
+                btn.innerText = "Create Account";
+            }
+        }
+    </script>
+<!-- Service Worker Registration -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        console.log('SW registered!', reg);
+      }).catch(err => console.log('SW registration failed', err));
+    });
+  }
+</script>
+</body>
+
+</html>

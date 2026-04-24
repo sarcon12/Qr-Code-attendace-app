@@ -1,0 +1,17 @@
+{
+  "name": "QR Attendance System",
+  "short_name": "QR Attendance",
+  "description": "Smart, Secure, and Efficient QR Tracking System",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#FFD700",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

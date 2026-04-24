@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Attendance Report | QR Attendance System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="global.css">
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="firebase-init.js?v=5"></script>
+    <style>
+        .report-container {
+            max-width: 1100px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .filter-section {
+            background: white;
+            padding: 20px;
+            border-radius: 20px;
+            margin-bottom: 25px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+        .status-pill {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 800;
+            color: white;
+            text-transform: uppercase;
+        }
+        @media print {
+            .btn, .filter-section, .header-actions { display: none !important; }
+            body { background: white; padding: 0; }
+            .glass-card { box-shadow: none; border: none; background: white; }
+            .report-container { margin: 0; width: 100%; max-width: 100%; }
+        }
+    </style>
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FFD700">
+</head>
+<body>
+
+<div class="report-container">
+    <div class="header-actions">
+        <div>
+            <h2 style="margin: 0; font-size: 2rem;"><span class="title-gradient">Attendance</span> Report</h2>
+            <p id="current-date-display" style="margin: 5px 0 0; color: #666; font-weight: 700;">Loading...</p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-secondary" style="width: auto; padding: 10px 20px;" onclick="window.print()">Print PDF</button>
+            <button class="btn" style="width: auto; padding: 10px 20px; background: #2e7d32; color: white;" onclick="exportReport()">Export CSV</button>
+            <a href="admin_dashboard.html" class="btn btn-danger" style="width: auto; padding: 10px 20px;">Back</a>
+        </div>
+    </div>
+
+    <div class="filter-section">
+        <div>
+            <label style="font-size: 11px; font-weight: 800; color: #888;">SELECT DATE</label>
+            <input type="date" id="reportDate" onchange="loadReport()" style="margin: 5px 0 0;">
+        </div>
+        <div>
+            <label style="font-size: 11px; font-weight: 800; color: #888;">COURSE</label>
+            <select id="filterCourse" onchange="updateYearFilter(); renderTable()" style="margin: 5px 0 0;">
+                <option value="">All Courses</option>
+                <option value="ACT">ACT</option>
+                <option value="BSIS">BSIS</option>
+                <option value="BEPED">BEPED</option>
+            </select>
+        </div>
+        <div>
+            <label style="font-size: 11px; font-weight: 800; color: #888;">YEAR</label>
+            <select id="filterYear" onchange="renderTable()" style="margin: 5px 0 0;">
+                <option value="">All Years</option>
+                <option value="1">1st Year</option>
+                <option value="2">2nd Year</option>
+                <option value="3">3rd Year</option>
+                <option value="4">4th Year</option>
+            </select>
+        </div>
+        <div>
+            <label style="font-size: 11px; font-weight: 800; color: #888;">SECTION</label>
+            <select id="filterSection" onchange="renderTable()" style="margin: 5px 0 0;">
+                <option value="">All Sections</option>
+            </select>
+        </div>
+    </div>
+
+    <main class="glass-card" style="padding: 0; overflow: hidden;">
+        <div class="table-container" style="margin-top: 0; box-shadow: none;">
+            <table id="reportTable">
+                <thead>
+                    <tr>
+                        <th>Student Name</th>
+                        <th>Course/Year</th>
+                        <th>Section</th>
+                        <th>Time In</th>
+                        <th>Time Out</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Loaded via JS -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+</div>
+
+<script>
+let reportData = [];
+
+async function loadReport() {
+    let date = document.getElementById("reportDate").value;
+    if (!date) {
+        date = getTodayDate();
+        document.getElementById("reportDate").value = date;
+    }
+
+    document.getElementById("current-date-display").innerText = "Records for: " + new Date(date).toLocaleDateString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    try {
+        const data = await FB.get(`attendance/${date}`);
+        reportData = data ? Object.values(data) : [];
+        updateSectionFilter();
+        renderTable();
+    } catch (err) {
+        console.error("Error loading report:", err);
+        alert("Failed to load records from database.");
+    }
+}
+
+function updateSectionFilter() {
+    const sections = new Set();
+    reportData.forEach(r => { if (r.section) sections.add(r.section); });
+    const select = document.getElementById("filterSection");
+    select.innerHTML = '<option value="">All Sections</option>';
+    Array.from(sections).sort().forEach(sec => {
+        select.innerHTML += `<option value="${sec}">${sec}</option>`;
+    });
+}
+
+function updateYearFilter() {
+    const course = document.getElementById("filterCourse").value;
+    const yearSelect = document.getElementById("filterYear");
+
+    const currentVal = yearSelect.value;
+    yearSelect.innerHTML = '<option value="">All Years</option>';
+
+    if (course === "ACT") {
+        yearSelect.innerHTML += '<option value="1">1st Year</option><option value="2">2nd Year</option>';
+    } else if (course === "BSIS") {
+        yearSelect.innerHTML += '<option value="3">3rd Year</option><option value="4">4th Year</option>';
+    } else {
+        // BEPED or All Courses
+        yearSelect.innerHTML += '<option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option><option value="4">4th Year</option>';
+    }
+
+    // Restore previous selection if it still exists in the new options
+    const optionExists = Array.from(yearSelect.options).some(opt => opt.value === currentVal);
+    if (optionExists) yearSelect.value = currentVal;
+}
+
+function renderTable() {
+    const tbody = document.querySelector("#reportTable tbody");
+    const course = document.getElementById("filterCourse").value;
+    const year = document.getElementById("filterYear").value;
+    const section = document.getElementById("filterSection").value;
+
+    tbody.innerHTML = "";
+
+    const filtered = reportData.filter(r => {
+        return (!course || r.course === course) &&
+               (!year || r.year === year) &&
+               (!section || r.section === section);
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #888;">No attendance records found for this criteria.</td></tr>';
+        return;
+    }
+
+    filtered.forEach(r => {
+        const row = tbody.insertRow();
+        const statusColor = r.status === 'PRESENT' ? 'var(--success)' : 'var(--danger)';
+        row.innerHTML = `
+            <td style="font-weight: 800;">${r.name || r.student}</td>
+            <td>${r.course} - ${r.year}yr</td>
+            <td>${r.section}</td>
+            <td style="color: var(--primary);">${r.timeIn}</td>
+            <td style="color: #888;">${r.timeOut}</td>
+            <td><span class="status-pill" style="background: ${statusColor}">${r.status}</span></td>
+        `;
+    });
+}
+
+function exportReport() {
+    if (reportData.length === 0) return alert("No records to export.");
+    const date = document.getElementById("reportDate").value;
+    let csv = "Name,Course,Year,Section,TimeIn,TimeOut,Status\n";
+    reportData.forEach(r => {
+        csv += `"${r.name || r.student}","${r.course}","${r.year}","${r.section}","${r.timeIn}","${r.timeOut}","${r.status}"\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Attendance_${date}.csv`;
+    a.click();
+}
+
+loadReport();
+</script>
+<!-- Service Worker Registration -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        console.log('SW registered!', reg);
+      }).catch(err => console.log('SW registration failed', err));
+    });
+  }
+</script>
+</body>
+</html>

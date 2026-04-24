@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Student Portal | QR Attendance System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="global.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="firebase-init.js?v=5"></script>
+    <style>
+        .portal-card {
+            width: 100%;
+            max-width: 480px;
+            text-align: center;
+        }
+        .profile-img {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 5px solid var(--primary);
+            margin: 0 auto 1.5rem;
+            display: block;
+            background: var(--bg-dark);
+            box-shadow: 0 8px 30px rgba(255,215,0,0.3), 0 4px 15px rgba(0,0,0,0.4);
+        }
+        #qrcode {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 24px;
+            display: inline-block;
+            margin: 1.5rem 0;
+            box-shadow: var(--shadow-lg);
+        }
+        #qrcode canvas, #qrcode img {
+            border-radius: 12px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            text-align: left;
+            background: hsla(0, 0%, 100%, 0.03);
+            padding: 1.5rem;
+            border-radius: 24px;
+            border: 1px solid var(--glass-border);
+            margin-top: 1rem;
+        }
+        .info-item label {
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.25rem;
+        }
+        .info-item span {
+            font-weight: 600;
+            color: var(--text-main);
+            font-size: 1rem;
+        }
+    </style>
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FFD700">
+</head>
+<body>
+
+<div class="flex-center" style="padding: 30px 20px;">
+    <main class="glass-card portal-card" style="padding-top: 2rem;">
+        <img id="studentPhoto" class="profile-img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150' viewBox='0 0 150 150'%3E%3Ccircle cx='75' cy='75' r='75' fill='%23e0e0e0'/%3E%3Ccircle cx='75' cy='58' r='28' fill='%23bbb'/%3E%3Cellipse cx='75' cy='130' rx='42' ry='32' fill='%23bbb'/%3E%3C/svg%3E" alt="Profile">
+        
+        <h3 style="color: var(--primary); margin-top: -10px; margin-bottom: 20px; font-weight: 800; font-size: 1.2rem; text-transform: uppercase;">QR Attendance System</h3>
+
+        <h2 id="studentName" style="margin: 0; color: var(--dark);">Student Name</h2>
+        <p style="color: #666; font-size: 14px; margin: 5px 0 20px;">Your Identification QR Code</p>
+
+        <div id="qrcode"></div>
+
+        <div class="info-grid">
+            <div class="info-item">
+                <label>Course</label>
+                <span id="res-course">---</span>
+            </div>
+            <div class="info-item">
+                <label>Year & Section</label>
+                <span id="res-year-sec">---</span>
+            </div>
+            <div class="info-item" style="grid-column: span 2;">
+                <label>Today's Attendance</label>
+                <span id="res-status" style="font-size: 16px;">NOT SCANNED</span>
+            </div>
+            <div class="info-item">
+                <label>Time In</label>
+                <span id="res-timein">--:--</span>
+            </div>
+            <div class="info-item">
+                <label>Time Out</label>
+                <span id="res-timeout">--:--</span>
+            </div>
+        </div>
+
+        <a href="logout.html" class="btn btn-danger" style="margin-top: 25px; padding: 12px; font-size: 14px;">Log Out</a>
+    </main>
+</div>
+
+<script>
+async function loadPortal() {
+    const user = JSON.parse(localStorage.getItem("currentUser"));
+    if (!user || user.role !== "student") {
+        window.location = "index.html";
+        return;
+    }
+
+    // Load Student Profile
+    const students = await FB.get('students');
+    let studentData = null;
+    for (let key in students) {
+        if (students[key].id === user.id) {
+            studentData = students[key];
+            break;
+        }
+    }
+
+    if (!studentData) {
+        alert("Account not found!");
+        window.location = "index.html";
+        return;
+    }
+
+    // UI Updates
+    document.getElementById("studentName").innerText = studentData.name;
+    document.getElementById("studentPhoto").src = studentData.photo;
+    document.getElementById("res-course").innerText = studentData.course;
+    document.getElementById("res-year-sec").innerText = `${studentData.year}yr - Sec ${studentData.section}`;
+
+    // Generate QR
+    new QRCode(document.getElementById("qrcode"), {
+        text: studentData.id,
+        width: 180,
+        height: 180,
+        colorDark: "#1a1a2e",
+        correctLevel: QRCode.CorrectLevel.H
+    });
+
+    // Watch Today's Attendance
+    const today = getTodayDate();
+    FB.watch(`attendance/${today}/${studentData.id}`, (record) => {
+        const statusEl = document.getElementById("res-status");
+        if (record) {
+            statusEl.innerText = record.status;
+            statusEl.style.color = record.status === "LATE" ? "var(--danger)" : "var(--success)";
+            document.getElementById("res-timein").innerText = record.timeIn;
+            document.getElementById("res-timeout").innerText = record.timeOut;
+        } else {
+            statusEl.innerText = "NOT SCANNED YET";
+            statusEl.style.color = "#888";
+        }
+    });
+}
+
+loadPortal();
+</script>
+<!-- Service Worker Registration -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        console.log('SW registered!', reg);
+      }).catch(err => console.log('SW registration failed', err));
+    });
+  }
+</script>
+</body>
+</html>
+

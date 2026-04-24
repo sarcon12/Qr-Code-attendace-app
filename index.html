@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login | QR Attendance System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="global.css">
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="firebase-init.js?v=5"></script>
+    <style>
+        .password-container {
+            position: relative;
+        }
+        .toggle-password {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+            color: var(--primary);
+            text-transform: uppercase;
+        }
+        .auth-links {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 1.5rem;
+        }
+        .auth-links a {
+            font-size: 14px;
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 700;
+            transition: opacity 0.3s;
+        }
+        .auth-links a:hover {
+            opacity: 0.8;
+        }
+    </style>
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FFD700">
+</head>
+<body>
+
+<div class="flex-center">
+    <header class="main-header">
+        <div style="display: flex; justify-content: center; align-items: center; gap: 20px; margin-bottom: 20px;">
+            <img src="4.jpg" alt="Logo 1" style="width: 90px; height: 90px; object-fit: contain; border-radius: 50%;">
+            <img src="5.jpg" alt="Logo 2" style="width: 90px; height: 90px; object-fit: contain; border-radius: 50%;">
+        </div>
+        <h1>QR Attendance <span class="title-gradient">System</span></h1>
+        <p>Smart, Secure, and Efficient Tracking</p>
+    </header>
+
+    <main class="glass-card" style="width: 100%; max-width: 400px;">
+        <h2 style="text-align: center; margin-bottom: 2rem;">Welcome Back</h2>
+        
+        <div class="input-group">
+            <input id="username" type="text" placeholder="Username" autocomplete="off" name="user_name_login">
+        </div>
+
+        <div class="input-group password-container">
+            <input id="password" type="password" placeholder="Password" autocomplete="new-password" name="user_pass_login">
+            <span class="toggle-password" onclick="togglePassword()">Show</span>
+        </div>
+
+        <div class="input-group">
+            <select id="role">
+                <option value="">Select Role</option>
+                <option value="admin">Admin</option>
+                <option value="student">Student</option>
+            </select>
+        </div>
+
+        <button id="loginBtn" class="btn btn-primary" onclick="login()">Login to Dashboard</button>
+
+        <div class="auth-links">
+            <a href="register_student.html?v=4">Create Account</a>
+            <span style="color: #ccc;">|</span>
+            <a href="change_password.html">Forgot Password?</a>
+        </div>
+
+        <hr style="margin: 2rem 0; border: 0; border-top: 1px solid #eee;">
+        
+        <button class="btn btn-danger" style="padding: 12px; font-size: 14px;" onclick="exitSystem()">Exit System</button>
+    </main>
+</div>
+
+<script>
+async function login() {
+    const u = document.getElementById("username").value.trim();
+    const p = document.getElementById("password").value.trim();
+    const role = document.getElementById("role").value;
+    const btn = document.getElementById("loginBtn");
+
+    if (!u || !p) {
+        alert("⚠️ Please enter both username and password!");
+        return;
+    }
+    if (!role) {
+        alert("⚠️ Please select your Role (Admin or Student)!");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = "Authenticating...";
+
+    try {
+        if (role === "admin") {
+            // Admin Check — credentials stored in Firebase (not in source code)
+            const adminCreds = await FB.get('settings/admin');
+            if (!adminCreds) {
+                // First-run seed: create default admin in Firebase
+                await FB.set('settings/admin', { username: 'admin', password: 'admincute12345' });
+            }
+            const storedAdmin = adminCreds || { username: 'admin', password: 'admincute12345' };
+            if (u === storedAdmin.username && p === storedAdmin.password) {
+                localStorage.setItem("currentUser", JSON.stringify({username: storedAdmin.username, role: "admin"}));
+                window.location = "admin_dashboard.html";
+                return;
+            } else {
+                alert("❌ Incorrect Admin Credentials!");
+                btn.disabled = false;
+                btn.innerText = "Login to Dashboard";
+                return;
+            }
+        } else if (role === "student") {
+            // Student Check
+            const students = await FB.get('students');
+            let userFound = null;
+
+            if (students) {
+                for (let key in students) {
+                    if (students[key].username === u) {
+                        userFound = students[key];
+                        break;
+                    }
+                }
+            }
+
+            if (userFound) {
+                if (userFound.password === p) {
+                    localStorage.setItem("currentUser", JSON.stringify({
+                        username: u, 
+                        role: "student", 
+                        id: userFound.id,
+                        name: userFound.name
+                    }));
+                    window.location = "student_dashboard.html";
+                } else {
+                    alert("❌ Incorrect Password!");
+                    btn.disabled = false;
+                    btn.innerText = "Login to Dashboard";
+                }
+            } else {
+                alert("❌ Student User not found!");
+                btn.disabled = false;
+                btn.innerText = "Login to Dashboard";
+            }
+        }
+    } catch (err) {
+        console.error(err);
+        alert("❌ Connection Error: " + err.message);
+        btn.disabled = false;
+        btn.innerText = "Login to Dashboard";
+    }
+}
+
+function togglePassword() {
+    const passInput = document.getElementById("password");
+    const toggle = document.querySelector(".toggle-password");
+    if (passInput.type === "password") {
+        passInput.type = "text";
+        toggle.innerText = "Hide";
+    } else {
+        passInput.type = "password";
+        toggle.innerText = "Show";
+    }
+}
+
+function exitSystem() {
+    if (confirm("Are you sure you want to exit?")) {
+        window.close();
+        window.location.href = "about:blank";
+    }
+}
+
+// Clear on load
+window.onload = () => {
+    document.getElementById("username").value = "";
+    document.getElementById("password").value = "";
+    document.getElementById("role").value = "";
+}
+</script>
+<!-- Service Worker Registration -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        console.log('SW registered!', reg);
+      }).catch(err => console.log('SW registration failed', err));
+    });
+  }
+</script>
+</body>
+</html>
+
+
